@@ -1,0 +1,18 @@
+{
+  "name": "inshape-ai-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^133.0.0",
+    "nodemailer": "^6.9.8",
+    "twilio": "^4.23.0",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.4.5"
+  }
+}
