@@ -96,21 +96,24 @@ app.post("/book", async (req, res) => {
     /* ---- Save to Google Sheets ---- */
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: "Sheet1!A:G",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[
-          new Date().toISOString(),
-          name,
-          phone,
-          service,
-          date,
-          time,
-          eventId
-        ]]
-      }
-    });
+  spreadsheetId: SHEET_ID,
+  range: "Sheet1!A:I",
+  valueInputOption: "USER_ENTERED",
+  requestBody: {
+    values: [[
+      name,
+      phone,
+      "",
+      service,
+      date,
+      time,
+      "Booked",
+      "AI Voice Agent",
+      new Date().toISOString()
+    ]]
+  }
+});
+
 
     res.json({
       status: "success",
