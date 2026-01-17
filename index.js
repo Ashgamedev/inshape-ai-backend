@@ -11,15 +11,30 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ---- SAFETY CHECK ----
-if (!process.env.GOOGLE_CREDENTIALS) {
-  console.error("❌ GOOGLE_CREDENTIALS env variable missing");
-  process.exit(1);
+/* ======================
+   ENV SAFETY CHECKS
+====================== */
+
+const requiredEnvs = [
+  "GOOGLE_CREDENTIALS",
+  "CALENDAR_ID",
+  "TIMEZONE",
+  "RESEND_API_KEY"
+];
+
+for (const key of requiredEnvs) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing env variable: ${key}`);
+    process.exit(1);
+  }
 }
+
+/* ======================
+   GOOGLE SETUP
+====================== */
 
 const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
-// Google Auth
 const auth = new google.auth.JWT(
   credentials.client_email,
   null,
@@ -35,18 +50,23 @@ const sheets = google.sheets({ version: "v4", auth });
 
 const SHEET_ID = "1g9Ga2sE-zZC8I8aYNMWY6S6YJ_7586PIP-g0CAacIvU";
 
-// Resend setup
+/* ======================
+   EMAIL SETUP
+====================== */
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Health check
+/* ======================
+   ROUTES
+====================== */
+
 app.get("/", (req, res) => {
   res.send("Inshape AI Backend is running");
 });
 
-// Booking endpoint
 app.post("/book", async (req, res) => {
   try {
-    const { name, phone, service, date, time, email } = req.body;
+    const { name, phone, service, date, time } = req.body;
 
     if (!name || !phone || !service || !date || !time) {
       return res.status(400).json({ error: "Missing fields" });
@@ -55,10 +75,11 @@ app.post("/book", async (req, res) => {
     const startDateTime = new Date(`${date}T${time}`);
     const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
 
-    // ---- Calendar event ----
+    /* ---- Create Calendar Event ---- */
+
     const event = {
       summary: `${service} - ${name}`,
-      description: `Phone: ${phone}${email ? ` | Email: ${email}` : ""}`,
+      description: `Phone: ${phone}`,
       start: {
         dateTime: startDateTime.toISOString(),
         timeZone: process.env.TIMEZONE
@@ -74,7 +95,10 @@ app.post("/book", async (req, res) => {
       resource: event
     });
 
-    // ---- Save to Sheets ----
+    const eventId = calendarResponse.data.id;
+
+    /* ---- Save to Google Sheets ---- */
+
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: "Sheet1!A:I",
@@ -83,58 +107,43 @@ app.post("/book", async (req, res) => {
         values: [[
           name,
           phone,
-          email || "",
+          "",
           service,
           date,
           time,
           "Booked",
-          "AI Agent",
+          "AI Voice Agent",
           new Date().toISOString()
         ]]
       }
     });
 
-    // ---- Email team ----
-    await resend.emails.send({
-      from: process.env.FROM_EMAIL,
-      to: process.env.TEAM_EMAIL,
-      subject: "New Free Trial Booking – Inshape Fitness",
+    /* ---- Send Email ---- */
+
+    const emailResult = await resend.emails.send({
+      from: "onboarding@resend.dev",   // IMPORTANT: safe sender
+      to: "YOUR_EMAIL@gmail.com",       // replace with your email for now
+      subject: "New Inshape Fitness Booking",
       html: `
-        <h3>New Booking Received</h3>
-        <p><b>Name:</b> ${name}</p>
-        <p><b>Phone:</b> ${phone}</p>
-        <p><b>Email:</b> ${email || "N/A"}</p>
-        <p><b>Service:</b> ${service}</p>
-        <p><b>Date:</b> ${date}</p>
-        <p><b>Time:</b> ${time}</p>
+        <h3>New Booking Confirmed</h3>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Phone:</strong> ${phone}</p>
+        <p><strong>Service:</strong> ${service}</p>
+        <p><strong>Date:</strong> ${date}</p>
+        <p><strong>Time:</strong> ${time}</p>
+        <p><strong>Event ID:</strong> ${eventId}</p>
       `
     });
 
-    // ---- Email user ----
-    if (email) {
-      await resend.emails.send({
-        from: process.env.FROM_EMAIL,
-        to: email,
-        subject: "Your booking with Inshape Fitness is confirmed",
-        html: `
-          <h3>You're booked!</h3>
-          <p>Hi ${name},</p>
-          <p>Your <b>${service}</b> has been scheduled:</p>
-          <p><b>Date:</b> ${date}</p>
-          <p><b>Time:</b> ${time}</p>
-          <p>We look forward to seeing you!</p>
-          <p>- Inshape Fitness</p>
-        `
-      });
-    }
+    console.log("📧 Email sent:", emailResult);
 
     res.json({
       status: "success",
-      eventId: calendarResponse.data.id
+      eventId
     });
 
   } catch (err) {
-    console.error("Booking failed:", err);
+    console.error("❌ Booking failed:", err);
     res.status(500).json({ error: "Failed to book appointment" });
   }
 });
