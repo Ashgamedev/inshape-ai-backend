@@ -19,7 +19,8 @@ const requiredEnvs = [
   "GOOGLE_CREDENTIALS",
   "CALENDAR_ID",
   "TIMEZONE",
-  "RESEND_API_KEY"
+  "RESEND_API_KEY",
+  "TEAM_EMAIL"
 ];
 
 for (const key of requiredEnvs) {
@@ -38,7 +39,7 @@ const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 const auth = new google.auth.JWT(
   credentials.client_email,
   null,
-  credentials.private_key,
+  credentials.private_key.replace(/\\n/g, "\n"),
   [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/spreadsheets"
@@ -66,7 +67,7 @@ app.get("/", (req, res) => {
 
 app.post("/book", async (req, res) => {
   try {
-    const { name, phone, service, date, time } = req.body;
+    const { name, phone, email, service, date, time } = req.body;
 
     if (!name || !phone || !service || !date || !time) {
       return res.status(400).json({ error: "Missing fields" });
@@ -79,7 +80,7 @@ app.post("/book", async (req, res) => {
 
     const event = {
       summary: `${service} - ${name}`,
-      description: `Phone: ${phone}`,
+      description: `Phone: ${phone}${email ? ` | Email: ${email}` : ""}`,
       start: {
         dateTime: startDateTime.toISOString(),
         timeZone: process.env.TIMEZONE
@@ -107,7 +108,7 @@ app.post("/book", async (req, res) => {
         values: [[
           name,
           phone,
-          "",
+          email || "",
           service,
           date,
           time,
@@ -118,24 +119,41 @@ app.post("/book", async (req, res) => {
       }
     });
 
-    /* ---- Send Email ---- */
+    /* ---- Email team ---- */
 
-    const emailResult = await resend.emails.send({
-      from: "onboarding@resend.dev",   // IMPORTANT: safe sender
-      to: "YOUR_EMAIL@gmail.com",       // replace with your email for now
-      subject: "New Inshape Fitness Booking",
+    await resend.emails.send({
+      from: "onboarding@resend.dev",
+      to: process.env.TEAM_EMAIL,
+      subject: "New Booking – Inshape Fitness",
       html: `
-        <h3>New Booking Confirmed</h3>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Phone:</strong> ${phone}</p>
-        <p><strong>Service:</strong> ${service}</p>
-        <p><strong>Date:</strong> ${date}</p>
-        <p><strong>Time:</strong> ${time}</p>
-        <p><strong>Event ID:</strong> ${eventId}</p>
+        <h3>New Booking Received</h3>
+        <p><b>Name:</b> ${name}</p>
+        <p><b>Phone:</b> ${phone}</p>
+        <p><b>Email:</b> ${email || "Not provided"}</p>
+        <p><b>Service:</b> ${service}</p>
+        <p><b>Date:</b> ${date}</p>
+        <p><b>Time:</b> ${time}</p>
+        <p><b>Event ID:</b> ${eventId}</p>
       `
     });
 
-    console.log("📧 Email sent:", emailResult);
+    /* ---- Email user ---- */
+
+    if (email) {
+      await resend.emails.send({
+        from: "onboarding@resend.dev",
+        to: email,
+        subject: "Your Inshape Fitness booking is confirmed",
+        html: `
+          <h3>You're booked, ${name}!</h3>
+          <p>Your <b>${service}</b> session has been scheduled.</p>
+          <p><b>Date:</b> ${date}</p>
+          <p><b>Time:</b> ${time}</p>
+          <p>If you need to reschedule, just reply to this email.</p>
+          <p>– Inshape Fitness Team</p>
+        `
+      });
+    }
 
     res.json({
       status: "success",
@@ -149,3 +167,4 @@ app.post("/book", async (req, res) => {
 });
 
 export default app;
+
